@@ -9,7 +9,8 @@ async fn main() -> Result<(), sleeper::SleeperError> {
 
     let client = sleeper::Client::new();
 
-    let resp_body = client.get_users_in_league(&league_id).await?;
+    let resp_body = client.get_matchups(&league_id, 1).await?;
+
     println!("{:?}", resp_body);
 
     Ok(())

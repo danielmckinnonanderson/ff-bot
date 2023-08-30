@@ -199,6 +199,19 @@ pub struct SleeperUser {
     pub avatar: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct Matchup {
+    starters_points: Vec<f64>,
+    starters: Vec<PlayerId>,
+    roster_id: u8,
+    points: f64,
+    players_points: Option<HashMap<PlayerId, f64>>,
+    players: Option<Vec<PlayerId>>,
+    matchup_id: u8,
+    custom_points: Option<HashMap<String, String>>,
+}
+
+
 #[derive(Error, Debug)]
 pub enum SleeperError {
     #[error("could not deserialize Sleeper response into provided type")]
@@ -283,6 +296,26 @@ impl Client {
         };
 
         Ok(users)
+    }
+
+    pub async fn get_matchups(&self, league_id: &str, week: u8) -> Result<Vec<Matchup>, SleeperError> {
+        let url = format!("{}/league/{}/matchups/{}", &self.base_url, &league_id, week);
+
+        let res = match self.client.get(&url).send().await {
+            Ok(res) => res,
+            Err(e) => {
+                return Result::Err(SleeperError::NetworkError(e.status().unwrap()));
+            }
+        };
+
+        let matchups: Vec<Matchup> = match res.json().await {
+            Ok(m) => m,
+            Err(_) => {
+                return Result::Err(SleeperError::DeserializationError(String::from("Matchup")));
+            }
+        };
+
+        Ok(matchups)
     }
 }
 
