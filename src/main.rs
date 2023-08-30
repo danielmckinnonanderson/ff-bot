@@ -5,11 +5,8 @@ async fn main() -> Result<(), sleeper::SleeperError> {
 
     let client = sleeper::Client::new();
 
-    let resp_body = client.get_sport_state(sleeper::SleeperSport::NBA).await?;
-
-    println!("{:?}", resp_body);
+    let all_players = client.get_all_players(sleeper::SleeperSport::NFL).await?;
 
     Ok(())
 }
-
 

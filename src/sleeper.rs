@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde_json::value::RawValue;
 use thiserror::Error;
 
 pub type LeagueId = String;
 pub type PlayerId = String;
 
-#[derive(Debug, Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct League {
     pub total_rosters: u8,
     pub status: String,
@@ -40,14 +40,14 @@ pub struct League {
     pub avatar: String,
 }
 
-#[derive(Debug, Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct LeagueMetadata {
     pub latest_league_winner_roster_id: Option<String>,
     pub keeper_deadline: String,
     pub auto_continue: String,
 }
 
-#[derive(Debug, Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct LeagueSettings {
     pub daily_waivers_last_ran: u16,
     pub reserve_allow_cov: u8,
@@ -257,10 +257,10 @@ pub enum SleeperError {
     #[error("could not deserialize Sleeper response into provided type")]
     DeserializationError(String),
 
-    #[error("request to Sleeper failed with status code {0}")]
-    NetworkError(http::StatusCode),
+    #[error("request to Sleeper failed")]
+    NetworkError(Option<http::StatusCode>),
 
-    #[error("could parse &str into SleeperSport: \"{0}\" was not a valid sport")]
+    #[error("could parse String into SleeperSport: \"{0}\" was not a valid sport")]
     InvalidSportError(String)
 }
 
@@ -286,7 +286,7 @@ impl Client {
         let res = match self.client.get(&url).send().await {
             Ok(res) => res,
             Err(e) => {
-                return Result::Err(SleeperError::NetworkError(e.status().unwrap()));
+                return Result::Err(SleeperError::NetworkError(e.status()));
             }
         };
 
@@ -306,7 +306,7 @@ impl Client {
         let res = match self.client.get(&url).send().await {
             Ok(res) => res,
             Err(e) => {
-                return Result::Err(SleeperError::NetworkError(e.status().unwrap()));
+                return Result::Err(SleeperError::NetworkError(e.status()));
             }
         };
 
@@ -327,7 +327,7 @@ impl Client {
         let res = match self.client.get(&url).send().await {
             Ok(res) => res,
             Err(e) => {
-                return Result::Err(SleeperError::NetworkError(e.status().unwrap()));
+                return Result::Err(SleeperError::NetworkError(e.status()));
             }
         };
 
@@ -347,7 +347,7 @@ impl Client {
         let res = match self.client.get(&url).send().await {
             Ok(res) => res,
             Err(e) => {
-                return Result::Err(SleeperError::NetworkError(e.status().unwrap()));
+                return Result::Err(SleeperError::NetworkError(e.status()));
             }
         };
 
@@ -366,19 +366,50 @@ impl Client {
 
         let res = match self.client.get(&url).send().await {
             Ok(res) => res,
-            Err(e) => {
-                return Result::Err(SleeperError::NetworkError(e.status().unwrap()));
-            }
+            Err(e) => return Result::Err(SleeperError::NetworkError(e.status()))
         };
 
-        let state: SportState = match res.json().await {
-            Ok(st) => st,
-            Err(_) => {
-                return Result::Err(SleeperError::DeserializationError(String::from("SportState")));
-            }
+        match res.json::<SportState>().await {
+            Ok(st) => Ok(st),
+            Err(_) => Err(SleeperError::DeserializationError(String::from("SportState")))
+        }
+    }
+
+    // Be careful, it's thicccc
+    pub async fn get_all_players(&self, sport: SleeperSport) -> Result<HashMap<String, serde_json::Value>, SleeperError> {
+
+        fn parse_into_player_map(players_unparsed: &str) -> Result<HashMap<String, serde_json::Value>, SleeperError> {
+            let mut result: HashMap<String, serde_json::Value> = HashMap::new();
+            let parsed_node: serde_json::Value = serde_json::from_str(players_unparsed).unwrap();
+
+            if let serde_json::Value::Object(map) = parsed_node {
+                for (key, value) in map {
+                    // match value { } // TODO - could drill down on parsing a little deeper here
+                    result.insert(key, value);
+                }
+            };
+
+            let ceedee_lamb = result.get_key_value("6786").unwrap();
+            println!("{:?}", ceedee_lamb);
+            Ok(result)
+        }
+
+
+        let url = format!("{}/players/{}", &self.base_url, &sport.to_string());
+        
+        let res = match self.client.get(&url).send().await {
+            Ok(res) => res,
+            Err(e) => return Err(SleeperError::NetworkError(e.status()))
         };
 
-        Ok(state)
+        // TODO - revisit type
+        match res.text_with_charset("utf-8").await {
+            Ok(p) => parse_into_player_map(&p),
+            Err(e) => { 
+                eprintln!("{e}");
+                return Err(SleeperError::DeserializationError(String::from("String"))) // TODO lol
+            }
+        }
     }
 }
 
