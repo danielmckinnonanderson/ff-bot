@@ -1,6 +1,10 @@
+use std::collections::HashMap;
+
 use serde::Deserialize;
+use thiserror::Error;
 
 pub type LeagueId = String;
+pub type PlayerId = String;
 
 #[derive(Debug, Deserialize, serde::Serialize)]
 pub struct League {
@@ -31,7 +35,6 @@ pub struct League {
     pub last_author_avatar: Option<String>,
     pub group_id: Option<String>,
     pub draft_id: Option<String>,
-    // pub display_order: u8,
     pub company_id: Option<String>,
     pub bracket_id: Option<String>,
     pub avatar: String,
@@ -155,9 +158,41 @@ pub enum RosterPosition {
     IDP
 }
 
-// TODO!
-#[derive(Debug)]
-pub struct Error {}
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct Roster {
+    pub taxi: Option<String>,
+    pub starters: Vec<String>,
+    pub settings: RosterSettings,
+    pub roster_id: u8,
+    pub reserve: Option<String>,
+    pub players: Vec<String>,
+    pub player_map: Option<PlayerId>,
+    pub owner_id: String,
+    pub metadata: Option<HashMap<String, String>>,
+    pub league_id: String,
+    pub keepers: Option<Vec<String>>,
+    pub co_owners: Option<Vec<String>>
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct RosterSettings {
+    pub wins: u8,
+    pub waiver_position: u8,
+    pub waiver_budget_used: u8,
+    pub total_moves: u16,
+    pub ties: u8,
+    pub losses: u8,
+    pub fpts: u8,
+}
+
+#[derive(Error, Debug)]
+pub enum SleeperError {
+    #[error("could not deserialize Sleeper response into provided type")]
+    DeserializationError(String),
+
+    #[error("request to Sleeper failed with status code {0}")]
+    NetworkError(http::StatusCode)
+}
 
 pub struct Client {
     base_url: String,
@@ -175,26 +210,46 @@ impl Client {
         }
     }
 
-    pub async fn get_league(&self, id: &str) -> Result<League, Error> {
+    pub async fn get_league(&self, id: &str) -> Result<League, SleeperError> {
         let url = format!("{}/league/{}", &self.base_url, &id);
 
         let res = match self.client.get(&url).send().await {
             Ok(res) => res,
-            Err(_) => {
-                eprintln!("Error while sending GET request to '{}'", &url);
-                return Result::Err(Error {});
+            Err(e) => {
+                return Result::Err(SleeperError::NetworkError(e.status().unwrap()));
             }
         };
 
         let league: League = match res.json::<League>().await {
             Ok(league) => league,
             Err(_) => {
-                eprintln!("Error while deserializing League from response body");
-                return Result::Err(Error {});
+                return Result::Err(SleeperError::DeserializationError(String::from("League")));
             }
         };
 
         Ok(league)
+    }
+
+    pub async fn get_rosters(&self, league_id: &str) -> Result<Vec<Roster>, SleeperError> {
+        let url = format!("{}/league/{}/rosters", &self.base_url, &league_id);
+
+        let res = match self.client.get(&url).send().await {
+            Ok(res) => res,
+            Err(e) => {
+                return Result::Err(SleeperError::NetworkError(e.status().unwrap()));
+            }
+        };
+
+        let rosters: Vec<Roster> = match res.json().await {
+
+            Ok(rost) => rost,
+            Err(e) => {
+                panic!("{e}");
+                return Result::Err(SleeperError::DeserializationError(String::from("Roster")));
+            }
+        };
+
+        Ok(rosters)
     }
 }
 
