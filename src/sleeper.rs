@@ -169,7 +169,7 @@ pub struct Roster {
     pub player_map: Option<PlayerId>,
     pub owner_id: String,
     pub metadata: Option<HashMap<String, String>>,
-    pub league_id: String,
+    pub league_id: LeagueId,
     pub keepers: Option<Vec<String>>,
     pub co_owners: Option<Vec<String>>
 }
@@ -183,6 +183,20 @@ pub struct RosterSettings {
     pub ties: u8,
     pub losses: u8,
     pub fpts: u8,
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct SleeperUser {
+    pub user_id: String,
+    pub username: Option<String>,
+    pub settings: Option<HashMap<String, String>>,
+    // TODO - metadata has one important field "team_name that should be communicated"
+    pub metadata: Option<HashMap<String, String>>, 
+    pub is_owner: bool,
+    pub is_bot: bool,
+    pub league_id: LeagueId,
+    pub display_name: Option<String>,
+    pub avatar: Option<String>,
 }
 
 #[derive(Error, Debug)]
@@ -243,13 +257,32 @@ impl Client {
         let rosters: Vec<Roster> = match res.json().await {
 
             Ok(rost) => rost,
-            Err(e) => {
-                panic!("{e}");
+            Err(_) => {
                 return Result::Err(SleeperError::DeserializationError(String::from("Roster")));
             }
         };
 
         Ok(rosters)
+    }
+
+    pub async fn get_users_in_league(&self, league_id: &str) -> Result<Vec<SleeperUser>, SleeperError> {
+        let url = format!("{}/league/{}/users", &self.base_url, &league_id);
+
+        let res = match self.client.get(&url).send().await {
+            Ok(res) => res,
+            Err(e) => {
+                return Result::Err(SleeperError::NetworkError(e.status().unwrap()));
+            }
+        };
+
+        let users: Vec<SleeperUser> = match res.json().await {
+            Ok(users) => users,
+            Err(_) => {
+                return Result::Err(SleeperError::DeserializationError(String::from("SleeperUser")));
+            }
+        };
+
+        Ok(users)
     }
 }
 
