@@ -211,6 +211,46 @@ pub struct Matchup {
     custom_points: Option<HashMap<String, String>>,
 }
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub enum SleeperSport {
+    NFL,
+    NBA,
+    LCS,
+}
+
+impl SleeperSport {
+    pub fn from_str(str: &str) -> Result<SleeperSport, SleeperError> {
+        let lower = str.to_lowercase();
+        match lower.as_str() {
+            "nfl" => Ok(SleeperSport::NFL),
+            "nba" => Ok(SleeperSport::NBA),
+            "lcs" => Ok(SleeperSport::LCS),
+            _ => Err(SleeperError::InvalidSportError(lower))
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            SleeperSport::NFL => String::from("nfl"),
+            SleeperSport::NBA => String::from("nba"),
+            SleeperSport::LCS => String::from("lcs"),
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct SportState {
+    week: u8,
+    season_type: String,
+    season_start_date: String, // TODO this is a date in fmt YYYY-MM-DD
+    season: String, // TODO this is year in fmt YYYY
+    previous_season: String, // TODO this is year in fmt YYYY
+    leg: u8,
+    league_season: String,
+    league_create_season: String,
+    display_week: u8,
+}
+
 
 #[derive(Error, Debug)]
 pub enum SleeperError {
@@ -218,7 +258,10 @@ pub enum SleeperError {
     DeserializationError(String),
 
     #[error("request to Sleeper failed with status code {0}")]
-    NetworkError(http::StatusCode)
+    NetworkError(http::StatusCode),
+
+    #[error("could parse &str into SleeperSport: \"{0}\" was not a valid sport")]
+    InvalidSportError(String)
 }
 
 pub struct Client {
@@ -316,6 +359,26 @@ impl Client {
         };
 
         Ok(matchups)
+    }
+
+    pub async fn get_sport_state(&self, sport: SleeperSport) -> Result<SportState, SleeperError> {
+        let url = format!("{}/state/{}", &self.base_url, &sport.to_string());
+
+        let res = match self.client.get(&url).send().await {
+            Ok(res) => res,
+            Err(e) => {
+                return Result::Err(SleeperError::NetworkError(e.status().unwrap()));
+            }
+        };
+
+        let state: SportState = match res.json().await {
+            Ok(st) => st,
+            Err(_) => {
+                return Result::Err(SleeperError::DeserializationError(String::from("SportState")));
+            }
+        };
+
+        Ok(state)
     }
 }
 
