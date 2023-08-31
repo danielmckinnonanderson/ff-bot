@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
-use serde_json::value::RawValue;
+use serde::{ Serialize, Deserialize };
+use serde_json::Value;
 use thiserror::Error;
 
 pub type LeagueId = String;
 pub type PlayerId = String;
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct League {
     pub total_rosters: u8,
     pub status: String,
@@ -40,14 +41,14 @@ pub struct League {
     pub avatar: String,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LeagueMetadata {
     pub latest_league_winner_roster_id: Option<String>,
     pub keeper_deadline: String,
     pub auto_continue: String,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LeagueSettings {
     pub daily_waivers_last_ran: u16,
     pub reserve_allow_cov: u8,
@@ -97,7 +98,7 @@ pub struct LeagueSettings {
     pub best_ball: u8
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ScoringSettings {
     pub st_ff: f64,
     pub pts_allow_7_13: f64,
@@ -145,7 +146,7 @@ pub struct ScoringSettings {
     pub sack: f64,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum RosterPosition {
     QB,
     RB,
@@ -158,7 +159,7 @@ pub enum RosterPosition {
     IDP
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Roster {
     pub taxi: Option<String>,
     pub starters: Vec<String>,
@@ -174,7 +175,7 @@ pub struct Roster {
     pub co_owners: Option<Vec<String>>
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RosterSettings {
     pub wins: u8,
     pub waiver_position: u8,
@@ -185,7 +186,7 @@ pub struct RosterSettings {
     pub fpts: u8,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SleeperUser {
     pub user_id: String,
     pub username: Option<String>,
@@ -199,7 +200,7 @@ pub struct SleeperUser {
     pub avatar: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Matchup {
     starters_points: Vec<f64>,
     starters: Vec<PlayerId>,
@@ -211,21 +212,55 @@ pub struct Matchup {
     custom_points: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum SleeperSport {
     NFL,
     NBA,
     LCS,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub enum InjuryStatus {
+    Healthy,
+    InjuredReserve,
+    Covid,
+    NotActive,
+    Out,
+    PUP,
+    Questionable,
+    Suspended
+}
+
+impl InjuryStatus {
+    pub fn from_str(s: &str) -> Result<InjuryStatus, SleeperError> {
+        let lower = s.to_lowercase();
+        match lower.as_ref() {
+            "questionable" => Ok(InjuryStatus::Questionable),
+            "cov" => Ok(InjuryStatus::Covid),
+            "ir" => Ok(InjuryStatus::InjuredReserve),
+            "na" => Ok(InjuryStatus::NotActive),
+            "pup" => Ok(InjuryStatus::PUP),
+            "sus" => Ok(InjuryStatus::Suspended),
+            unmatched => Err(SleeperError::InvalidInjuryStatus(unmatched.to_string()))
+        }
+    }
+
+    pub fn from_json(node: &Value) -> Result<InjuryStatus, SleeperError> {
+        match node {
+            Value::String(s) => InjuryStatus::from_str(s),
+            Value::Null => Ok(InjuryStatus::Healthy),
+            unmatched => Err(SleeperError::InvalidInjuryStatus("{ an object }".to_string()))
+        }
+    }
+}
+
 impl SleeperSport {
     pub fn from_str(str: &str) -> Result<SleeperSport, SleeperError> {
-        let lower = str.to_lowercase();
-        match lower.as_str() {
+        match str.to_lowercase().as_str() {
             "nfl" => Ok(SleeperSport::NFL),
             "nba" => Ok(SleeperSport::NBA),
             "lcs" => Ok(SleeperSport::LCS),
-            _ => Err(SleeperError::InvalidSportError(lower))
+            unmatched => Err(SleeperError::InvalidSport(unmatched.to_string()))
         }
     }
 
@@ -261,7 +296,10 @@ pub enum SleeperError {
     NetworkError(Option<http::StatusCode>),
 
     #[error("could parse String into SleeperSport: \"{0}\" was not a valid sport")]
-    InvalidSportError(String)
+    InvalidSport(String),
+
+    #[error("could parse String into PlayerStatus: \"{0}\" was not a valid injury designation")]
+    InvalidInjuryStatus(String)
 }
 
 pub struct Client {
@@ -274,9 +312,9 @@ impl Client {
         Client {
             base_url: String::from("https://api.sleeper.app/v1"),
             client: reqwest::Client::builder()
-                .https_only(true)
-                .build()
-                .unwrap()
+                                    .https_only(true)
+                                    .build()
+                                    .unwrap()
         }
     }
 
@@ -285,16 +323,12 @@ impl Client {
 
         let res = match self.client.get(&url).send().await {
             Ok(res) => res,
-            Err(e) => {
-                return Result::Err(SleeperError::NetworkError(e.status()));
-            }
+            Err(e) => return Err(SleeperError::NetworkError(e.status()))
         };
 
         let league: League = match res.json::<League>().await {
             Ok(league) => league,
-            Err(_) => {
-                return Result::Err(SleeperError::DeserializationError(String::from("League")));
-            }
+            Err(_) => return Err(SleeperError::DeserializationError(String::from("League")))
         };
 
         Ok(league)
@@ -305,17 +339,12 @@ impl Client {
 
         let res = match self.client.get(&url).send().await {
             Ok(res) => res,
-            Err(e) => {
-                return Result::Err(SleeperError::NetworkError(e.status()));
-            }
+            Err(e) => return Err(SleeperError::NetworkError(e.status()))
         };
 
         let rosters: Vec<Roster> = match res.json().await {
-
             Ok(rost) => rost,
-            Err(_) => {
-                return Result::Err(SleeperError::DeserializationError(String::from("Roster")));
-            }
+            Err(_) => return Err(SleeperError::DeserializationError(String::from("Roster")))
         };
 
         Ok(rosters)
@@ -326,16 +355,12 @@ impl Client {
 
         let res = match self.client.get(&url).send().await {
             Ok(res) => res,
-            Err(e) => {
-                return Result::Err(SleeperError::NetworkError(e.status()));
-            }
+            Err(e) => return Err(SleeperError::NetworkError(e.status()))
         };
 
         let users: Vec<SleeperUser> = match res.json().await {
             Ok(users) => users,
-            Err(_) => {
-                return Result::Err(SleeperError::DeserializationError(String::from("SleeperUser")));
-            }
+            Err(_) => return Err(SleeperError::DeserializationError(String::from("SleeperUser")))
         };
 
         Ok(users)
@@ -346,16 +371,12 @@ impl Client {
 
         let res = match self.client.get(&url).send().await {
             Ok(res) => res,
-            Err(e) => {
-                return Result::Err(SleeperError::NetworkError(e.status()));
-            }
+            Err(e) => return Result::Err(SleeperError::NetworkError(e.status()))
         };
 
         let matchups: Vec<Matchup> = match res.json().await {
             Ok(m) => m,
-            Err(_) => {
-                return Result::Err(SleeperError::DeserializationError(String::from("Matchup")));
-            }
+            Err(_) => return Err(SleeperError::DeserializationError(String::from("Matchup")))
         };
 
         Ok(matchups)
@@ -376,24 +397,21 @@ impl Client {
     }
 
     // Be careful, it's thicccc
-    pub async fn get_all_players(&self, sport: SleeperSport) -> Result<HashMap<String, serde_json::Value>, SleeperError> {
+    pub async fn get_all_players(&self, sport: SleeperSport) -> Result<HashMap<String, Value>, SleeperError> {
 
-        fn parse_into_player_map(players_unparsed: &str) -> Result<HashMap<String, serde_json::Value>, SleeperError> {
-            let mut result: HashMap<String, serde_json::Value> = HashMap::new();
+        fn parse_into_player_map(players_unparsed: &str) -> Result<HashMap<String, Value>, SleeperError> {
+            let mut result: HashMap<String, Value> = HashMap::new();
             let parsed_node: serde_json::Value = serde_json::from_str(players_unparsed).unwrap();
 
-            if let serde_json::Value::Object(map) = parsed_node {
+            if let Value::Object(map) = parsed_node {
                 for (key, value) in map {
                     // match value { } // TODO - could drill down on parsing a little deeper here
                     result.insert(key, value);
                 }
             };
 
-            let ceedee_lamb = result.get_key_value("6786").unwrap();
-            println!("{:?}", ceedee_lamb);
             Ok(result)
         }
-
 
         let url = format!("{}/players/{}", &self.base_url, &sport.to_string());
         
@@ -405,10 +423,7 @@ impl Client {
         // TODO - revisit type
         match res.text_with_charset("utf-8").await {
             Ok(p) => parse_into_player_map(&p),
-            Err(e) => { 
-                eprintln!("{e}");
-                return Err(SleeperError::DeserializationError(String::from("String"))) // TODO lol
-            }
+            Err(_) => Err(SleeperError::DeserializationError(String::from("String"))) // TODO lol
         }
     }
 }
