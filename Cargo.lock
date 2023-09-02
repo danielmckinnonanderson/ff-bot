@@ -766,7 +766,7 @@ dependencies = [
 [[package]]
 name = "sleeper"
 version = "0.1.0"
-source = "git+https://github.com/danielmckinnonanderson/sleeper-rs.git?branch=master#8f581c6119c16b57477659143acb728d8e5c79e8"
+source = "git+https://github.com/danielmckinnonanderson/sleeper-rs.git?branch=master#049e8ec306bcbb67a60758e1f51665865bd473e8"
 dependencies = [
  "http",
  "reqwest",
