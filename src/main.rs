@@ -1,19 +1,25 @@
 use sleeper::client::Client;
+use sleeper::data::*;
+// use groupme::client::GroupmeClient;
 mod brains;
 
+type OwnerId = String;
+
 #[tokio::main]
-async fn main() -> Result<(), ()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let league_id = match std::env::args().nth(1) {
         Some(id) => id,
         None => panic!("No league ID was passed to the executable!")
     };
 
-    let client = sleeper::Client::new();
-    let rosters = client.get_rosters(&league_id).await.unwrap();
-    let players = client.get_all_players(sleeper::SleeperSport::NFL).await.unwrap();
+    let client  = Client::new();
 
-    let result: Vec<(String, Vec<(&serde_json::Value, sleeper::InjuryStatus)>)> = rosters.iter()
+    // let owners = client.get_users_in_league(&league_id).await.expect("Could not get owners. Request was not completed");
+    let rosters: Vec<Roster> = client.get_rosters(&league_id).await.expect("Could not get rosters. Request was not completed");
+    let players: AllPlayers = client.get_all_players(SleeperSport::NFL).await.expect("Could not get all NFL players. Request was not completed");
+
+    let result: Vec<(OwnerId, Vec<(&NflPlayer, InjuryStatus)>)> = rosters.iter()
         .filter_map(|rost| {
             match brains::injured_from_starters(rost.starters.to_owned(), &players) {
                 Ok(injured_players) => Some((rost.owner_id.to_owned(), injured_players)),
