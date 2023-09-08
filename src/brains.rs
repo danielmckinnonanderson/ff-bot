@@ -1,27 +1,11 @@
-#![allow(dead_code)]
-use sleeper::data::{ InjuryStatus, AllPlayers, PlayerId, NflPlayer, Roster, OwnerId };
-use std::{collections::HashMap, slice::Iter};
+use sleeper::data::{ InjuryStatus, AllPlayers, PlayerId, NflPlayer,
+    Roster, OwnerId, RosterPosition, };
 
+#[derive(Debug)]
 pub enum BotError {
     InjuryStatusNotFound,
+    InvalidStarterIndex,
     Generic // remove
-}
-
-pub struct PlayerInjuryInfo {
-    body_part: Option<String>,
-    full_name: String,
-    status: InjuryStatus,
-}
-
-pub struct OwnerInfo {
-    name: String,
-    team_name: String,
-    owner_id: String,
-}
-
-pub struct InjuryWarningData {
-    info: PlayerInjuryInfo,
-    owner: OwnerInfo
 }
 
 /// Predicate used to evaluate what will be considered injured
@@ -34,13 +18,10 @@ fn is_injured(st: InjuryStatus) -> Option<InjuryStatus> {
     }
 }
 
-
 // / Given a roster, get a Vector of their injured players (of size 0 if they have none).
 // / Returns errors for various invalid states
 pub fn injured_from_starters(starters: Vec<PlayerId>, 
-                             players: &AllPlayers,
-) -> Result<Vec<(&NflPlayer, InjuryStatus)>, BotError> {
-
+                             players: &AllPlayers) -> Result<Vec<(&NflPlayer, InjuryStatus)>, BotError> {
     let result: Vec<(&NflPlayer, InjuryStatus)> = starters.into_iter()
         .filter_map(|p: PlayerId| {
             match players {
@@ -71,5 +52,59 @@ pub fn check_rosters<'a>(rosters: &Vec<Roster>, all_players: &'a AllPlayers) -> 
                 Err(_) => None
             }
         }).collect()
+}
+
+/// Given a vector of PlayerId's representing the starters,
+/// produces a vector of the RosterPositions for which the PlayerId
+/// was "0" (signifying empty).
+pub fn empties_from_starters<'a>(starters: Vec<PlayerId>) -> Vec<RosterPosition> {
+    let mut result: Vec<RosterPosition> = vec![];
+
+    for (index, value) in starters.iter().enumerate() {
+        if value == "0" {
+            let empty_pos = position_from_index(index).unwrap();
+            result.push(empty_pos);
+        }
+    }
+
+    result
+}
+
+// TODO - determine a way to make this generic, using the league_settings field of league
+/// This relies on whatever the league settings / starter positions are.
+/// It works for my league, which uses QB, WR x 3, RB x 2, FLEX x 2, TE, K, DST
+fn position_from_index(index: usize) -> Result<RosterPosition, BotError> {
+    match index {
+        0         => Ok(RosterPosition::QB),
+        1 | 2     => Ok(RosterPosition::RB),
+        3 | 4 | 5 => Ok(RosterPosition::WR),
+        6         => Ok(RosterPosition::TE),
+        7 | 8     => Ok(RosterPosition::FLEX),
+        9         => Ok(RosterPosition::K),
+        10        => Ok(RosterPosition::DEF),
+        _         => Err(BotError::InvalidStarterIndex)
+    }
+}
+
+/// Creates the formatted message String in cases where the owner is starting an injured or
+/// otherwise inactive player at the given position
+pub fn create_injured_msg_string(team_name: &str,
+                                 owner_username: &str,
+                                 player_name: &str,
+                                 status: InjuryStatus,
+                                 position: RosterPosition) -> String {
+    format!("⛔ Team {team_name} ({owner_username}) is starting {player_name} ({status}) at {position}! ⛔")
+}
+
+/// Creates the formatted message String in cases where the owner is not starting a player at the
+/// given position
+pub fn create_empty_msg_string(team_name: &str, owner_username: &str, position: RosterPosition) -> String {
+    format!("⛔ Team {team_name} ({owner_username}) is not starting a player at {position}! ⛔")
+}
+
+/// Creates the formatted message String in cases where the owner is starting a player on bye at
+/// the given position
+pub fn create_bye_msg_string(team_name: &str, owner_username: &str, player_name: &str, position: RosterPosition) -> String {
+    format!("💤 Team {team_name} ({owner_username}) is starting {player_name} (on bye) at {position}! 💤")
 }
 
