@@ -99,7 +99,7 @@ pub fn create_injured_msg_string(team_name: &str,
 /// Creates the formatted message String in cases where the owner is not starting a player at the
 /// given position
 pub fn create_empty_msg_string(team_name: &str, owner_username: &str, position: RosterPosition) -> String {
-    format!("⛔ Team {team_name} ({owner_username}) is not starting a player at {position}! ⛔")
+    format!("🕳️ Team {team_name} ({owner_username}) is not starting a player at {position}! 🕳️")
 }
 
 /// Creates the formatted message String in cases where the owner is starting a player on bye at
