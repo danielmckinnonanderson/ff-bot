@@ -57,7 +57,7 @@ pub fn check_rosters<'a>(rosters: &Vec<Roster>, all_players: &'a AllPlayers) -> 
 /// Given a vector of PlayerId's representing the starters,
 /// produces a vector of the RosterPositions for which the PlayerId
 /// was "0" (signifying empty).
-pub fn empties_from_starters<'a>(starters: Vec<PlayerId>) -> Vec<RosterPosition> {
+pub fn empties_from_starters(starters: Vec<PlayerId>) -> Vec<RosterPosition> {
     let mut result: Vec<RosterPosition> = vec![];
 
     for (index, value) in starters.iter().enumerate() {
