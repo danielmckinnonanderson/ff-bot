@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use sleeper::data::{ InjuryStatus, AllPlayers, PlayerId, NflPlayer,
+use sleeper::data::{ InjuryStatus, PlayerId, NflPlayer,
     Roster, OwnerId, RosterPosition, };
 
 /// Type representing a starter RosterPosition which was found to be empty
@@ -62,6 +62,8 @@ impl NflTeamAbbrv {
         }
     }
 
+    // TODO - Make this generic year-after-year instead of hardcoded
+    /// Depends upon the get_bye_week function to test.
     pub fn is_on_bye(&self, current_week: u8) -> bool {
         match self {
             Self::FA  => true, // All free agents are always 'on bye', since they aren't playing
@@ -69,6 +71,8 @@ impl NflTeamAbbrv {
         }
     }
 
+    // TODO - Maybe move this to the Sleeper library and deserialize the player JSON 'team' field
+    //        into this directly...
     /// Takes an optional team name, where 'None' means 'free agent'
     pub fn new(team: Option<String>) -> Option<Self> {
         match team {
@@ -116,8 +120,8 @@ impl NflTeamAbbrv {
 
 /// Checks the provided rosters for starters who are injured or unlikely to play, returning a list
 /// of tuples mapping an OwnerId (String) to their list of bad starters. The list can be empty.
-pub fn check_rosters<'a>(rosters: &Vec<Roster>, 
-                         all_players: &'a HashMap<PlayerId, NflPlayer>, 
+pub fn check_rosters(rosters: &Vec<Roster>, 
+                         all_players: &HashMap<PlayerId, NflPlayer>, 
                          current_week: u8
 ) -> Vec<(OwnerId, BadStarters)> {
 
@@ -152,6 +156,7 @@ fn is_injured(st: InjuryStatus) -> Option<InjuryStatus> {
 }
 
 /// Given a roster, get a Vector of their injured players (of size 0 if they have none).
+/// Swallows errors and filters out the starter / player that produced them.
 pub fn injured_from_starters(starters: &Vec<Option<&NflPlayer>>) -> Vec<InjuredStarter> {
     starters.iter()
         .enumerate()
@@ -199,10 +204,15 @@ pub fn byes_from_starters(starters: &Vec<Option<&NflPlayer>>, current_week: u8) 
             match opt_player {
                 Some(player) => match NflTeamAbbrv::new(player.team.clone()) {
                     Some(team) => match team.is_on_bye(current_week) {
-                        true => Some(ByeStarter {
-                            name: player.full_name.clone().unwrap().to_string(),
-                            pos:  position_from_index(index).unwrap()
-                        }),
+                        true => {
+                            // Can't use full_name here because defenses don't have
+                            // that field. Instead, defenses' first_name is the city and last_name
+                            // is the team name. We'll use that instead just to be safe.
+                            Some(ByeStarter {
+                                name: format!("{} {}", player.first_name, player.last_name),
+                                pos:  position_from_index(index).unwrap()
+                            })
+                        },
                         false => None
                     },
                     // No team, meaning the player is a free agent and therefore won't be playing
@@ -230,27 +240,5 @@ fn position_from_index(index: usize) -> Result<RosterPosition, BotError> {
         10        => Ok(RosterPosition::DEF),
         _         => Err(BotError::InvalidStarterIndex)
     }
-}
-
-/// Creates the formatted message String in cases where the owner is starting an injured or
-/// otherwise inactive player at the given position
-pub fn create_injured_msg_string(team_name: &str,
-                                 owner_username: &str,
-                                 player_name: &str,
-                                 status: InjuryStatus,
-                                 position: RosterPosition) -> String {
-    format!("⛔ Team {team_name} ({owner_username}) is starting {player_name} ({status}) at {position}! ⛔")
-}
-
-/// Creates the formatted message String in cases where the owner is not starting a player at the
-/// given position
-pub fn create_empty_msg_string(team_name: &str, owner_username: &str, position: RosterPosition) -> String {
-    format!("🕳️ Team {team_name} ({owner_username}) is not starting a player at {position}! 🕳️")
-}
-
-/// Creates the formatted message String in cases where the owner is starting a player on bye at
-/// the given position
-pub fn create_bye_msg_string(team_name: &str, owner_username: &str, player_name: &str, position: RosterPosition) -> String {
-    format!("💤 Team {team_name} ({owner_username}) is starting {player_name} (on bye) at {position}! 💤")
 }
 
