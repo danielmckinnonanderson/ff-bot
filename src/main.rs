@@ -78,19 +78,17 @@ async fn check_rosters_and_message(league_id: &str, sleeper_client: &SleeperClie
 
     println!("Got result");
 
-    let tasks = result.into_iter().map(|(user, bad_starters)| {
-        println!("Declaring a new task");
+    let tasks = result.into_iter().flat_map(|(user, bad_starters)| {
         let bad_starters_box = Box::new(bad_starters);
+        // FIXME - Update user metadata struct to not be obnoxious to work with
         // let metadata  = user.metadata.clone();
         // let team_name = metadata.get("team_name").unwrap();
 
         let username  = user.display_name.unwrap();
         let msg_client_copy = msg_client.clone();
 
-        tokio::spawn(async move {
-            println!("Inside task");
+        let injured_st_task = tokio::spawn(async move {
             let injured_starters = bad_starters_box.0;
-            println!("Injured starters len was 0! {}", injured_starters.len() == 0);
 
             for injured_starter in &injured_starters {
                 println!("{:?}", injured_starter.name);
@@ -110,12 +108,63 @@ async fn check_rosters_and_message(league_id: &str, sleeper_client: &SleeperClie
                         ()
                     },
                     Err(e) => {
-                        println!("Fucksie wupsie!");
+                        println!("Error posting message!");
                         eprintln!("{e}");
                     }
                 }
             }
-        })
+        });
+
+        let empty_st_task = tokio::spawn(async move {
+            let empty_starters = bad_starters_box.1;
+
+            for empty_starter in &empty_starters {
+                let content = messaging::create_empty_msg_string(
+                    None,
+                    username.clone(),
+                    empty_starter.clone());
+                
+                println!("Content is {content}");
+
+                match msg_client_copy.post_bot_message(content.as_ref()).await {
+                    Ok(_) => {
+                        println!("Posted message successfully!");
+                        ()
+                    },
+                    Err(e) => {
+                        println!("Error posting message!");
+                        eprintln!("{e}");
+                    }
+                }
+            }
+        });
+
+        let bye_st_task = tokio::spawn(async move {
+            let bye_starters = bad_starters_box.2;
+
+            for bye_starter in &bye_starters {
+                let content = messaging::create_bye_msg_string(
+                    None,
+                    username.clone(),
+                    bye_starter.name.as_ref(),
+                    bye_starter.pos.clone());
+                
+                println!("Content is {content}");
+
+                match msg_client_copy.post_bot_message(content.as_ref()).await {
+                    Ok(_) => {
+                        println!("Posted message successfully!");
+                        ()
+                    },
+                    Err(e) => {
+                        println!("Error posting message!");
+                        eprintln!("{e}");
+                    }
+                }
+            }
+        });
+
+        vec![injured_st_task, empty_st_task, bye_st_task]
     });
 
 
