@@ -55,7 +55,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn check_rosters_and_message(league_id: &str, sleeper_client: &SleeperClient, bot_id: &str) -> () {
-    let msg_client = GroupmeClient::new(bot_id.to_string());
+
+    let msg_client = Arc::new(GroupmeClient::new(bot_id.to_string()));
 
     let all_players: AllPlayers = sleeper_client.get_all_players(SleeperSport::NFL).await.expect("Could not get all NFL players. Request was not completed");
     let all_nfl_players: HashMap<PlayerId, NflPlayer> = match all_players {
@@ -79,23 +80,25 @@ async fn check_rosters_and_message(league_id: &str, sleeper_client: &SleeperClie
     println!("Got result");
 
     let tasks = result.into_iter().flat_map(|(user, bad_starters)| {
-        let bad_starters_box = Box::new(bad_starters);
+        let bad_starters_arc = Arc::new(bad_starters);
+        let msg_client_copy = Arc::clone(&msg_client);
         // FIXME - Update user metadata struct to not be obnoxious to work with
         // let metadata  = user.metadata.clone();
         // let team_name = metadata.get("team_name").unwrap();
 
-        let username  = user.display_name.unwrap();
-        let msg_client_copy = msg_client.clone();
+        let username  = Box::new(user.display_name.unwrap());
 
         let injured_st_task = tokio::spawn(async move {
-            let injured_starters = bad_starters_box.0;
+            let msg_client_copy = Arc::clone(&msg_client_copy);
+            let bad_st_clone = Arc::clone(&bad_starters_arc);
+            let injured_starters = &bad_st_clone.0;
 
-            for injured_starter in &injured_starters {
+            for injured_starter in injured_starters {
                 println!("{:?}", injured_starter.name);
                 println!("{:?}", injured_starter.pos);
                 let content = messaging::create_injured_msg_string(
                     None,
-                    username.clone(),
+                    &username.clone(),
                     injured_starter.name.as_ref(), 
                     injured_starter.status.clone(),
                     injured_starter.pos.clone());
@@ -116,12 +119,14 @@ async fn check_rosters_and_message(league_id: &str, sleeper_client: &SleeperClie
         });
 
         let empty_st_task = tokio::spawn(async move {
-            let empty_starters = bad_starters_box.1;
+            let msg_client_copy = &msg_client.clone();
+            let bad_st_clone = Arc::clone(&bad_starters_arc);
+            let empty_starters = &bad_st_clone.1;
 
-            for empty_starter in &empty_starters {
+            for empty_starter in empty_starters {
                 let content = messaging::create_empty_msg_string(
                     None,
-                    username.clone(),
+                    &username.clone(),
                     empty_starter.clone());
                 
                 println!("Content is {content}");
@@ -140,12 +145,14 @@ async fn check_rosters_and_message(league_id: &str, sleeper_client: &SleeperClie
         });
 
         let bye_st_task = tokio::spawn(async move {
-            let bye_starters = bad_starters_box.2;
+            let msg_client_copy = Arc::clone(&msg_client);
+            let bad_st_clone = Arc::clone(&bad_starters_arc);
+            let bye_starters = &bad_st_clone.2;
 
-            for bye_starter in &bye_starters {
+            for bye_starter in bye_starters {
                 let content = messaging::create_bye_msg_string(
                     None,
-                    username.clone(),
+                    &username.clone(),
                     bye_starter.name.as_ref(),
                     bye_starter.pos.clone());
                 
@@ -173,47 +180,6 @@ async fn check_rosters_and_message(league_id: &str, sleeper_client: &SleeperClie
         task.await.expect("Task failed!");
     }
 
-    println!("Hey, we're at the end");
+    println!("All tasks completed.");
 }
-
-// async fn message_invalid_starters(values: Vec<(&sleeper::data::SleeperUser, BadStarters)>, msg_client: &GroupmeClient) {
-//     values.iter().for_each(|value| {
-//         println!("OwnerID: {}", value.0.user_id);
-
-//         if value.1.0.len() > 0 {
-//             println!("->  Injured starters...");
-//             for inj in &value.1.0 {
-//                 tokio::spawn(async move {
-//                     let owner_name: String = value.0.username.unwrap_or(String::new());
-//                     let team_name: String = value.0.metadata.get("team_name").unwrap().unwrap();
-//                     let content: String = messaging::create_injured_msg_string(team_name.as_ref(), owner_name.as_ref(), inj.name.as_ref(), inj.status, inj.pos);
-//                     msg_client.post_bot_message(content.as_ref()).await.unwrap_or_else(|opt| {});
-//                     println!("    ->  {:?} - {:?} is {:?}", inj.pos, inj.name, inj.status);
-//                 });
-//             }
-//         } else {
-//             println!("->  No injured starters!");
-//         }
-
-//         if value.1.1.len() > 0 {
-//             println!("->  Empty starters...");
-//             for empty in &value.1.1 {
-//                 println!("    ->  {:?} is empty", empty);
-//             }
-//         } else {
-//             println!("->  No empty starters!");
-//         }
-
-//         if value.1.2.len() > 0 {
-//             println!("->  Starters on bye...");
-//             for bye in &value.1.2 {
-//                 println!("    ->  {:?} - {:?} is on bye", bye.pos, bye.name);
-//             }
-//         } else {
-//             println!("->  No starters on bye!");
-//         }
-//     });
-
-//     ()
-// }
 
